@@ -159,7 +159,105 @@ async def get_whitelist(identifier: str):
             except Exception:
                 return None
             
+async def get_player_count(identifier: str) -> str:
+    """
+    Ping le serveur Minecraft et retourne le nombre de joueurs connectés
+    sous la forme '{online}/{max}'. Retourne '?/?' en cas d'échec.
+    """
+    from mcstatus import JavaServer
 
+    result = await get_host_and_port(identifier)
+    if result is None:
+        return "?/?"
+
+    host, port = result
+
+    try:
+        server = JavaServer.lookup(f"{host}:{port}", timeout=3)
+        status = await server.async_status()
+        return f"{status.players.online}/{status.players.max}"
+    except Exception as e:
+        print(f"[MC Ping] Erreur pour {host}:{port} → {e}")
+        return "?/?"
+
+async def get_server_ip(serverName: str) -> str:
+    """Retourne l'IP publique du serveur Minecraft (depuis .env ou allocations)."""
+    return SERVER_IPS.get(serverName.lower(), "Non configurée")
+
+async def get_online_players(identifier: str) -> list[str] | None:
+    """
+    Retourne la liste des joueurs connectés sous forme de string.
+    Ex: "Player1, Player2" ou "Aucun joueur connecté" ou "?" en cas d'erreur.
+    """
+    from mcstatus import JavaServer
+
+    result = await get_host_and_port(identifier)
+    if result is None:
+        return None
+
+    host, port = result
+
+    try:
+        server = JavaServer.lookup(f"{host}:{port}", timeout=3)
+        status = await server.async_status()
+
+        online = status.players.online
+        player_list = status.players.sample or []
+
+        if online == 0:
+            return None
+        return [player.name for player in player_list]  
+
+    except Exception as e:
+        print(f"[MC Ping] Erreur get_online_players {host}:{port} → {e}")
+        return None
+
+
+async def get_server_ping(identifier: str) -> float | None:
+    """
+    Retourne la latence du serveur en ms (float).
+    Retourne None en cas d'erreur.
+    """
+    from mcstatus import JavaServer
+
+    result = await get_host_and_port(identifier)
+    if result is None:
+        return None
+
+    host, port = result
+
+    try:
+        server = JavaServer.lookup(f"{host}:{port}", timeout=3)
+        latency = await server.async_ping()
+        return round(latency, 1)
+
+    except Exception as e:
+        print(f"[MC Ping] Erreur get_server_ping {host}:{port} → {e}")
+        return None
+
+
+async def get_server_version_ping(identifier: str) -> str:
+    """
+    Retourne la version du serveur via MC ping.
+    Ex: "Paper 1.21.1" ou "?" en cas d'erreur.
+    """
+    from mcstatus import JavaServer
+
+    result = await get_host_and_port(identifier)
+    if result is None:
+        return "?"
+
+    host, port = result
+
+    try:
+        server = JavaServer.lookup(f"{host}:{port}", timeout=3)
+        status = await server.async_status()
+        return status.version.name
+
+    except Exception as e:
+        print(f"[MC Ping] Erreur get_server_version_ping {host}:{port} → {e}")
+        return "?"
+    
 # ─── Commandes Discord ────────────────────────────────────────────────────────
 
 @bot.event
@@ -168,7 +266,7 @@ async def on_ready():
     await bot.tree.sync()
 
 @bot.command(name="status")
-async def status(ctx, *, server_name: str = None):
+async def status(ctx, *, server_name: str | None = None):
     """!status [NomDuServeur] — Affiche le statut d'un serveur Minecraft."""
     if not server_name:
         await ctx.send("❌ Usage : `!status [NomDuServeur]`")
@@ -181,35 +279,30 @@ async def status(ctx, *, server_name: str = None):
             await ctx.send(embed=embed)
             return
 
-        identifier = attr["identifier"]
-        resources = await get_server_resources(identifier)
+        server_name = attr["name"] # type: ignore
+        identifier = attr["identifier"] # type: ignore
+        server_state = await get_server_state(identifier)
+        server_ip = await get_server_ip(server_name) # type: ignore
 
-        if resources is None:
-            await ctx.send("❌ Impossible de récupérer les ressources du serveur.")
-            return
-
-        state = resources.get("current_state", "unknown")
-        stats = resources.get("resources", {})
-
-        # Couleur et emoji selon l'état
-        state_info = {
-            "running":  ("🟢", "En ligne",   0x2ecc71),
-            "starting": ("🟡", "Démarrage",  0xf39c12),
-            "stopping": ("🟠", "Arrêt",      0xe67e22),
-            "offline":  ("🔴", "Hors ligne", 0xe74c3c),
-        }
-        emoji, label, color = state_info.get(state, ("⚪", state.capitalize(), 0x95a5a6))
-
-        ram_mb   = stats.get("memory_absolute", 0) / 1024 / 1024
-        ram_lim  = attr.get("limits", {}).get("memory", 0)
-        cpu_pct  = stats.get("cpu_absolute", 0)
-        disk_mb  = stats.get("disk_absolute", 0) / 1024 / 1024
-        disk_lim = attr.get("limits", {}).get("disk", 0)
-        uptime_s = stats.get("uptime", 0) // 1000
-        uptime_fmt = f"{uptime_s // 3600}h {(uptime_s % 3600) // 60}m {uptime_s % 60}s" if uptime_s else "—"
-
-        # IP du serveur (depuis .env)
-        server_ip = SERVER_IPS.get(attr["name"].lower(), "Non configurée")
+        if server_state.__contains__("En ligne"):
+            player_count = await get_player_count(identifier)
+            online_players = await get_online_players(identifier)
+            server_ping = await get_server_ping(identifier)
+            version = await get_server_version(identifier)
+        else:
+            player_count = "—"
+            online_players = "—"
+            server_ping = "—"
+            version = "—"
+        
+        # online
+        if online_players is None:
+            online_players = "Aucun joueur connecté"
+        else:
+            online_players = "\n".join(
+                "  ".join(f"`{p}`" for p in sorted(online_players)[i:i+3])
+                for i in range(0, len(online_players), 3)
+            )
 
         # Whitelist (lecture du fichier)
         wl_players = await get_whitelist(identifier)
@@ -218,19 +311,17 @@ async def status(ctx, *, server_name: str = None):
         elif len(wl_players) == 0:
             wl_text = "*Aucun joueur whitelisté*"
         else:
-            wl_text = "\n".join(f"• `{p}`" for p in sorted(wl_players))
+            wl_text = "\n".join(
+                "  ".join(f"`{p}`" for p in sorted(wl_players)[i:i+3])
+                for i in range(0, len(wl_players), 3)
+            )
 
-        embed = discord.Embed(
-            title=f"{emoji} {attr['name']}",
-            description=f"**État :** {label}",
-            color=color
-        )
-        embed.add_field(name="🌐 IP",       value=f"`{server_ip}`",                          inline=True)
-        embed.add_field(name="⏱️ Uptime",   value=f"`{uptime_fmt}`",                          inline=True)
-        embed.add_field(name="\u200b",      value="\u200b",                                   inline=True)  # spacer
-        embed.add_field(name="🖥️ RAM",      value=f"`{ram_mb:.0f} MB` / `{ram_lim} MB`",     inline=True)
-        embed.add_field(name="⚙️ CPU",      value=f"`{cpu_pct:.1f}%`",                        inline=True)
-        embed.add_field(name="💾 Disque",   value=f"`{disk_mb:.0f} MB` / `{disk_lim} MB`",   inline=True)
+        embed = discord.Embed(title=f"{server_name}", description=f"**État :** {server_state}")
+        embed.add_field(name=f"🌐 IP : `{server_ip}`", value="", inline=True)
+        embed.add_field(name="👥 En ligne", value=online_players, inline=False)
+        embed.add_field(name="⏱️ Latence", value=f"{server_ping} ms", inline=True)
+        embed.add_field(name="🛠️ Version", value=version, inline=True)
+        embed.add_field(name=f"🎮 Joueurs connectés {player_count}", value="", inline=True)
         embed.add_field(
             name=f"📋 Whitelist ({len(wl_players) if wl_players else 0} joueur(s))",
             value=wl_text,
@@ -238,7 +329,7 @@ async def status(ctx, *, server_name: str = None):
         )
         embed.set_footer(text=f"Pterodactyl • ID: {identifier}")
 
-        view = ServerControlView(identifier, attr["name"], state)
+        view = ServerControlView(identifier, server_name, server_state)
         await ctx.send(embed=embed, view=view)
 
 
@@ -257,83 +348,47 @@ async def list_servers(ctx):
             ip = SERVER_IPS.get(a["name"].lower(), "Non configurée")
             server_status = await get_server_state(a["identifier"])
             version = await get_server_version(a["identifier"])
+            if server_status.__contains__("En ligne"):
+                players = await get_player_count(a["identifier"])
+            else:
+                players = "—"
             embed.add_field(
                 name=a["name"],
-                value=f"IP: `{ip}`\n{server_status}\n{version}\n",
+                value=f"IP: `{ip}`\n{server_status}\n{version}\nJoueurs: {players}",
                 inline=False
             )
         await ctx.send(embed=embed)
 
 
 @bot.command(name="whitelist")
-async def whitelist(ctx, server_name: str = None, pseudo: str = None):
-    """!whitelist [NomServeur] [Pseudo] — Ajoute un joueur à la whitelist."""
-    if not server_name or not pseudo:
-        await ctx.send("❌ Usage : `!whitelist [NomDuServeur] [PseudoMinecraft]`")
+async def whitelist(ctx, action: str | None = None, server_name: str | None = None, pseudo: str | None = None):
+    """!whitelist [add/remove] [NomServeur] [Pseudo] — Ajoute ou retire un joueur de la whitelist."""
+    if action not in ["add", "remove"] or not server_name or not pseudo:
+        await ctx.send("❌ Usage : `!whitelist [add/remove] [NomDuServeur] [PseudoMinecraft]`")
         return
 
     async with ctx.typing():
         attr, error = await find_server(server_name)
-        if error:
+        if error or attr is None:
             embed = discord.Embed(title="❌ Serveur introuvable", description=error, color=0xe74c3c)
             await ctx.send(embed=embed)
             return
 
         identifier = attr["identifier"]
         state = await get_server_state(identifier)
-        if state != "running":
+        if not state.__contains__("En ligne"):
             embed = discord.Embed(
                 title="❌ Serveur hors ligne",
-                description=f"Le serveur **{attr['name']}** doit être **en ligne** pour modifier la whitelist.",
-                color=0xe74c3c
+                description=f"Le serveur **{attr['name']}** doit être **en ligne** pour modifier la whitelist."
             )
             await ctx.send(embed=embed)
             return
 
-        success = await send_console_command(identifier, f"whitelist add {pseudo}")
+        success = await send_console_command(identifier, f"whitelist {action} {pseudo}")
         if success:
             embed = discord.Embed(
                 title="✅ Whitelist mise à jour",
-                description=f"**{pseudo}** a été ajouté à la whitelist de **{attr['name']}**.",
-                color=0x2ecc71
-            )
-            embed.set_footer(text=f"Commande exécutée par {ctx.author.display_name}")
-            await ctx.send(embed=embed)
-        else:
-            await ctx.send("❌ Impossible d'envoyer la commande au serveur.")
-
-
-@bot.command(name="unwhitelist")
-async def unwhitelist(ctx, server_name: str = None, pseudo: str = None):
-    """!unwhitelist [NomServeur] [Pseudo] — Retire un joueur de la whitelist."""
-    if not server_name or not pseudo:
-        await ctx.send("❌ Usage : `!unwhitelist [NomDuServeur] [PseudoMinecraft]`")
-        return
-
-    async with ctx.typing():
-        attr, error = await find_server(server_name)
-        if error:
-            embed = discord.Embed(title="❌ Serveur introuvable", description=error, color=0xe74c3c)
-            await ctx.send(embed=embed)
-            return
-
-        identifier = attr["identifier"]
-        state = await get_server_state(identifier)
-        if state != "running":
-            embed = discord.Embed(
-                title="❌ Serveur hors ligne",
-                description=f"Le serveur **{attr['name']}** doit être **en ligne** pour modifier la whitelist.",
-                color=0xe74c3c
-            )
-            await ctx.send(embed=embed)
-            return
-
-        success = await send_console_command(identifier, f"whitelist remove {pseudo}")
-        if success:
-            embed = discord.Embed(
-                title="🗑️ Whitelist mise à jour",
-                description=f"**{pseudo}** a été retiré de la whitelist de **{attr['name']}**.",
-                color=0xe67e22
+                description=f"**{pseudo}** a été { 'ajouté' if action == 'add' else 'retiré' } de la whitelist de **{attr['name']}**."
             )
             embed.set_footer(text=f"Commande exécutée par {ctx.author.display_name}")
             await ctx.send(embed=embed)
@@ -349,11 +404,11 @@ class ServerControlView(discord.ui.View):
         self.identifier = identifier
         self.server_name = server_name
 
-        if current_state in ("offline", "stopping"):
-            self.add_item(PowerButton("▶️ Démarrer",    "start",   discord.ButtonStyle.success, identifier))
-        if current_state == "running":
+        if current_state.__contains__("En ligne"):
             self.add_item(PowerButton("🔁 Redémarrer",  "restart", discord.ButtonStyle.primary,  identifier))
             self.add_item(PowerButton("⏹️ Arrêter",     "stop",    discord.ButtonStyle.danger,   identifier))
+        else:
+            self.add_item(PowerButton("▶️ Démarrer",    "start",   discord.ButtonStyle.success, identifier))
 
 
 class PowerButton(discord.ui.Button):
