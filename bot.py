@@ -1,3 +1,5 @@
+from http import server
+
 import discord
 from discord.ext import commands
 import aiohttp
@@ -29,8 +31,7 @@ intents.message_content = True
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ─── Helpers API Pterodactyl ──────────────────────────────────────────────────
-
+# ─── Helpers API Pterodactyl ──────────────────────────────────────────────────   
 def ptero_headers():
     return {
         "Authorization": f"Bearer {PTERODACTYL_API_KEY}",
@@ -47,7 +48,15 @@ async def get_all_servers():
                 return None
             data = await resp.json()
             return data.get("data", [])
-
+        
+async def _read_server_file(identifier: str, path: str) -> str | None:
+    url = f"{PTERODACTYL_URL}/api/client/servers/{identifier}/files/contents"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=ptero_headers(), params={"file": path}) as resp:
+            if resp.status != 200:
+                return None
+            return await resp.text()
+        
 async def find_server(name: str):
     """Cherche un serveur par nom (insensible à la casse)."""
     servers = await get_all_servers()
@@ -84,13 +93,57 @@ async def send_console_command(identifier: str, command: str):
         async with session.post(url, headers=ptero_headers(), json={"command": command}) as resp:
             return resp.status == 204
 
-async def get_server_state(identifier: str):
+async def get_server_version(identifier: str) -> str:
+    """Retourne la version du serveur Minecraft (ex: 1.19.2) grâce à une lecture dans le fichier infos.txt"""
+    import re
+    text = await _read_server_file(identifier, "infos.txt")
+    if not text:
+        return "?"
+    match = re.search(r"version:\s*([\d.]+)\s+(\w+)", text, re.IGNORECASE)
+    if match:
+        version = match.group(1)
+        loader = match.group(2)
+        return f"{version} ({loader})"
+    return "?"
+
+async def get_server_state(identifier: str) -> str:
     """Retourne l'état actuel du serveur (running, offline, etc.)."""
     resources = await get_server_resources(identifier)
+    state_info = {
+        "running":  ("🟢", "En ligne"),
+        "starting": ("🟡", "Démarrage"),
+        "stopping": ("🟠", "Arrêt"),
+        "offline":  ("🔴", "Hors ligne"),
+        "unknown":  ("⚪", "Inconnu")
+    }
     if resources is None:
-        return None
-    return resources.get("current_state", "unknown")
+        resources = "unknown"
+    current_state = (resources or {}).get("current_state", "unknown")
+    emoji, label = state_info.get(current_state, state_info["unknown"])
+    return f"{emoji} {label}"
 
+async def get_host_and_port(identifier: str) -> tuple[str, int] | None:
+    """Récupère l'IP et le port du serveur depuis les allocations de Pterodactyl."""
+    servers = await get_all_servers()
+    if not servers:
+        return None
+
+    server = next((s for s in servers if s["attributes"]["identifier"] == identifier), None)
+    if not server:
+        return None
+
+    allocations = server["attributes"].get("relationships", {}).get("allocations", {}).get("data", [])
+    
+    # Prendre l'allocation par défaut, sinon la première disponible
+    alloc = next((a for a in allocations if a["attributes"].get("is_default")), allocations[0] if allocations else None)
+    if not alloc:
+        return None
+
+    attr = alloc["attributes"]
+    host = attr.get("ip", "")
+    port = int(attr.get("port", 25565))
+    return host, port
+    
 async def get_whitelist(identifier: str):
     """Lit le fichier whitelist.json du serveur via l'API fichiers de Pterodactyl."""
     url = f"{PTERODACTYL_URL}/api/client/servers/{identifier}/files/contents?file=/whitelist.json"
@@ -105,6 +158,7 @@ async def get_whitelist(identifier: str):
                 return [entry.get("name", "?") for entry in data if isinstance(entry, dict)]
             except Exception:
                 return None
+            
 
 # ─── Commandes Discord ────────────────────────────────────────────────────────
 
@@ -197,13 +251,15 @@ async def list_servers(ctx):
             await ctx.send("❌ Aucun serveur trouvé ou panel inaccessible.")
             return
 
-        embed = discord.Embed(title="📋 Serveurs Minecraft", color=0x3498db)
+        embed = discord.Embed(title="Serveurs Minecraft")
         for s in servers:
             a = s["attributes"]
             ip = SERVER_IPS.get(a["name"].lower(), "Non configurée")
+            server_status = await get_server_state(a["identifier"])
+            version = await get_server_version(a["identifier"])
             embed.add_field(
                 name=a["name"],
-                value=f"IP: `{ip}` | ID: `{a['identifier']}`",
+                value=f"IP: `{ip}`\n{server_status}\n{version}\n",
                 inline=False
             )
         await ctx.send(embed=embed)
