@@ -212,7 +212,6 @@ async def get_online_players(identifier: str) -> list[str] | None:
         print(f"[MC Ping] Erreur get_online_players {host}:{port} → {e}")
         return None
 
-
 async def get_server_ping(identifier: str) -> float | None:
     """
     Retourne la latence du serveur en ms (float).
@@ -235,29 +234,6 @@ async def get_server_ping(identifier: str) -> float | None:
         print(f"[MC Ping] Erreur get_server_ping {host}:{port} → {e}")
         return None
 
-
-async def get_server_version_ping(identifier: str) -> str:
-    """
-    Retourne la version du serveur via MC ping.
-    Ex: "Paper 1.21.1" ou "?" en cas d'erreur.
-    """
-    from mcstatus import JavaServer
-
-    result = await get_host_and_port(identifier)
-    if result is None:
-        return "?"
-
-    host, port = result
-
-    try:
-        server = JavaServer.lookup(f"{host}:{port}", timeout=3)
-        status = await server.async_status()
-        return status.version.name
-
-    except Exception as e:
-        print(f"[MC Ping] Erreur get_server_version_ping {host}:{port} → {e}")
-        return "?"
-    
 # ─── Commandes Discord ────────────────────────────────────────────────────────
 
 @bot.event
