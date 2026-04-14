@@ -9,6 +9,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# liste des roles pour chaques servers
+ROLE_SERVER_CHOICES = [
+    {"name": "StonksVillien", "description": "Joueur du server Stonks Ville"},
+    {"name": "StonksModien", "description": "Joueur du server Stonks Mod"},
+    {"name": "Cavien", "description": "Joueur du server de la Cave"},
+    {"name": "HelperAdmin", "description": "Joueur pour aider au developpement du bot et la gestion des serveurs"},
+]
+
 DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 PTERODACTYL_URL = os.getenv("PTERODACTYL_URL")         # ex: http://192.168.1.50:80
 PTERODACTYL_API_KEY = os.getenv("PTERODACTYL_API_KEY") # Client API Key (ptlc_...)
@@ -239,11 +247,13 @@ async def get_server_ping(identifier: str) -> float | None:
 @bot.event
 async def on_ready():
     print(f"✅ Bot connecté en tant que {bot.user} (ID: {bot.user.id})")
+    bot.add_view(RoleSelectionView())
     await bot.tree.sync()
 
 @bot.command(name="status")
 async def status(ctx, *, server_name: str | None = None):
     """!status [NomDuServeur] — Affiche le statut d'un serveur Minecraft."""
+    await ctx.message.delete()
     if not server_name:
         await ctx.send("❌ Usage : `!status [NomDuServeur]`")
         return
@@ -312,6 +322,7 @@ async def status(ctx, *, server_name: str | None = None):
 @bot.command(name="servers")
 async def list_servers(ctx):
     """!servers — Liste tous les serveurs disponibles."""
+    await ctx.message.delete()
     async with ctx.typing():
         servers = await get_all_servers()
         if not servers:
@@ -339,6 +350,7 @@ async def list_servers(ctx):
 @bot.command(name="whitelist")
 async def whitelist(ctx, action: str | None = None, server_name: str | None = None, pseudo: str | None = None):
     """!whitelist [add/remove] [NomServeur] [Pseudo] — Ajoute ou retire un joueur de la whitelist."""
+    await ctx.message.delete()
     if action not in ["add", "remove"] or not server_name or not pseudo:
         await ctx.send("❌ Usage : `!whitelist [add/remove] [NomDuServeur] [PseudoMinecraft]`")
         return
@@ -407,6 +419,76 @@ class PowerButton(discord.ui.Button):
             item.disabled = True
         await interaction.message.edit(view=self.view)
 
+
+ 
+# ─── Sélection de rôles ───────────────────────────────────────────────────────
+
+class RoleButton(discord.ui.Button):
+    def __init__(self, role_info: dict):
+        super().__init__(
+            label=f"{role_info['name']}",
+            style=discord.ButtonStyle.secondary,
+            custom_id=f"role_{role_info['name']}"
+        )
+        self.role_name = role_info["name"]
+ 
+    async def callback(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        member = interaction.user
+ 
+        role = discord.utils.get(guild.roles, name=self.role_name)
+        if role is None:
+            await interaction.response.send_message(
+                f"❌ Le rôle **{self.role_name}** n'existe pas sur ce serveur. Crée-le d'abord !",
+                ephemeral=True
+            )
+            return
+ 
+        if role in member.roles:
+            await member.remove_roles(role)
+            await interaction.response.send_message(
+                f"✅ Rôle **{self.role_name}** retiré.", ephemeral=True
+            )
+        else:
+            await member.add_roles(role)
+            await interaction.response.send_message(
+                f"✅ Rôle **{self.role_name}** ajouté.", ephemeral=True
+            )
+ 
+ 
+class RoleSelectionView(discord.ui.View):
+    def __init__(self, roles_choices=ROLE_SERVER_CHOICES):
+        super().__init__(timeout=None)  # Persistant, pas de timeout
+        for role_info in roles_choices:
+            self.add_item(RoleButton(role_info))
+ 
+ 
+@bot.command(name="ServerRoleSelection")
+@commands.has_permissions(administrator=True)
+async def role_selection(ctx):
+    """!roleSelection — (Admin) Affiche le menu de sélection de rôles."""
+    embed = discord.Embed(
+        title="Sélection de rôles",
+        description="Clique sur un bouton pour obtenir ou retirer un rôle.\nTu peux en avoir plusieurs !",
+        color=0x5865F2
+    )
+    for role_info in ROLE_SERVER_CHOICES:
+        embed.add_field(
+            name=f"{role_info['name']}",
+            value=role_info["description"],
+            inline=False
+        )
+    embed.set_footer(text="Cliquer à nouveau sur un rôle déjà obtenu le retire.")
+ 
+    await ctx.message.delete()  # Supprime la commande du chat pour garder le salon propre
+    await ctx.send(embed=embed, view=RoleSelectionView())
+ 
+ 
+@role_selection.error
+async def role_selection_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send("❌ Tu n'as pas la permission d'utiliser cette commande.", delete_after=5)
+ 
 
 # ─── Lancement ────────────────────────────────────────────────────────────────
 
