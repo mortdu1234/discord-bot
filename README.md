@@ -1,103 +1,82 @@
-# 🤖 Bot Discord — Minecraft Pterodactyl
+# Bot Discord — Gestion serveurs Minecraft
 
-Bot Discord pour monitorer et contrôler tes serveurs Minecraft hébergés sur Pterodactyl.
+## Structure du projet
 
----
+```
+minecraft-bot/
+├── main.py                    # Point d'entrée : lance le bot, charge les cogs
+├── config.py                  # Variables d'environnement, rôles, IPs des serveurs
+├── requirements.txt
+├── .env.example                # Modèle du fichier .env à créer
+│
+├── services/                  # Logique métier (aucun code Discord ici)
+│   ├── pterodactyl.py          # Client API Pterodactyl (session réutilisée)
+│   ├── minecraft.py            # Ping direct des serveurs (mcstatus)
+│   └── server_service.py       # Combine les deux : construit un statut complet
+│
+├── views/                     # Composants d'interface Discord (boutons)
+│   ├── server_control.py       # Boutons start/stop/restart
+│   └── role_selection.py       # Boutons de rôles + création automatique
+│
+└── cogs/                      # Commandes Discord, regroupées par thème
+    ├── server_commands.py       # !status, !servers, !whitelist
+    └── role_commands.py         # !ServerRoleSelection
+```
 
-## 📦 Installation
+## Pourquoi cette organisation ?
+
+- **`config.py`** : toutes les valeurs modifiables (rôles, IPs, tokens) sont à un seul endroit.
+- **`services/`** : la logique "métier" (appels API, ping Minecraft) est totalement indépendante
+  de Discord. Elle pourrait être testée ou réutilisée ailleurs sans discord.py.
+- **`views/`** : chaque composant d'interface (boutons) est isolé dans son propre fichier.
+- **`cogs/`** : chaque commande Discord ne fait plus qu'appeler `server_service` et construire
+  l'embed. Toute la complexité (Pterodactyl, mcstatus) est cachée derrière.
+
+Avantage concret : pour ajouter une commande, tu écris un fichier dans `cogs/` qui utilise
+`ServerService` — pas besoin de comprendre comment fonctionne l'API Pterodactyl.
+
+## Nouveauté : création automatique des rôles
+
+Avant, si un rôle défini dans `ROLE_CHOICES` n'existait pas sur le serveur, le bot affichait
+une erreur ("crée-le d'abord"). Maintenant :
+
+- Quand un admin lance `!ServerRoleSelection`, le bot vérifie chaque rôle de la config
+  (`views/role_selection.py::ensure_roles_exist`) et **crée automatiquement** ceux qui manquent,
+  avec la couleur définie dans `config.py`.
+- En filet de sécurité, si un rôle est supprimé *après* l'affichage du menu (entre le moment où
+  le menu est affiché et le clic sur le bouton), il est recréé à la volée.
+
+Pour ajouter un rôle : il suffit d'ajouter une ligne dans `ROLE_CHOICES` (`config.py`), rien
+d'autre à toucher.
+
+```python
+ROLE_CHOICES: list[RoleChoice] = [
+    RoleChoice("StonksVillien", "Joueur du serveur Stonks Ville"),
+    RoleChoice("NouveauRole", "Description du nouveau rôle", color=0xFF0000),
+]
+```
+
+## Installation
 
 ```bash
-# 1. Cloner / copier les fichiers dans un dossier
-cd /opt/minecraft-bot
-
-# 2. Créer un environnement virtuel Python
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Installer les dépendances
 pip install -r requirements.txt
-
-# 4. Configurer le .env
 cp .env.example .env
-nano .env
+# Remplir .env avec ton token Discord, l'URL du panel et la clé API Pterodactyl
+
+python main.py
 ```
 
----
+## Commandes disponibles
 
-## ⚙️ Configuration du `.env`
+| Commande | Description |
+|---|---|
+| `!status <NomServeur>` | Affiche le statut détaillé d'un serveur (IP, joueurs, whitelist, boutons start/stop/restart) |
+| `!servers` | Liste tous les serveurs avec un résumé rapide |
+| `!whitelist add\|remove <NomServeur> <Pseudo>` | Ajoute/retire un joueur de la whitelist |
+| `!ServerRoleSelection` | (Admin) Crée les rôles manquants + affiche le menu de sélection de rôles |
 
-| Variable              | Description                                                  |
-|-----------------------|--------------------------------------------------------------|
-| `DISCORD_TOKEN`       | Token de ton bot Discord (portail developer Discord)         |
-| `PTERODACTYL_URL`     | URL de ton panel Pterodactyl (ex: `https://panel.exemple.com`) |
-| `PTERODACTYL_API_KEY` | **Client** API Key (dans Account > API Credentials)          |
+## Points d'attention
 
-> ⚠️ Utilise bien une **Client API Key** (`ptlc_...`), pas une Application Key.
-
----
-
-## 🚀 Lancement
-
-```bash
-# Manuel
-source venv/bin/activate
-python bot.py
-
-# Ou avec systemd (recommandé sur Proxmox/VM)
-```
-
-### Service systemd (optionnel)
-
-Crée `/etc/systemd/system/minecraft-bot.service` :
-
-```ini
-[Unit]
-Description=Discord Minecraft Bot
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/minecraft-bot
-ExecStart=/opt/minecraft-bot/venv/bin/python bot.py
-Restart=always
-RestartSec=5
-User=www-data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-systemctl daemon-reload
-systemctl enable --now minecraft-bot
-systemctl status minecraft-bot
-```
-
----
-
-## 🎮 Commandes
-
-| Commande                       | Description                                      |
-|--------------------------------|--------------------------------------------------|
-| `!status [NomDuServeur]`       | Affiche l'état + ressources du serveur           |
-| `!servers`                     | Liste tous les serveurs disponibles              |
-
-### Exemple
-
-```
-!status Survival
-!status Creative_2
-```
-
-Le bot affichera un embed avec :
-- 🟢 État (En ligne / Hors ligne / Démarrage…)
-- RAM, CPU, Disque utilisés
-- Uptime
-- Boutons **Démarrer / Arrêter / Redémarrer** selon l'état actuel
-
----
-
-## 🔒 Sécurité
-
-- Restreins les commandes à un canal spécifique si besoin en ajoutant une vérification `ctx.channel.id`.
-- Ne partage jamais ton `.env`.
+- Le token Discord et la clé API Pterodactyl doivent rester dans `.env` (jamais commités).
+- Le bot doit avoir la permission **"Gérer les rôles"** sur le serveur Discord pour pouvoir créer
+  des rôles automatiquement, et son propre rôle doit être positionné au-dessus des rôles qu'il crée.
