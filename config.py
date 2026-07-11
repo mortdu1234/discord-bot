@@ -25,6 +25,7 @@ ROLE_CHOICES: list[RoleChoice] = [
     RoleChoice("StonksVillien", "Joueur du serveur Stonks Ville"),
     RoleChoice("StonksModien", "Joueur du serveur Stonks Mod"),
     RoleChoice("Cavien", "Joueur du serveur de la Cave"),
+    RoleChoice("Palworld", "Joueur du serveur Palworld"),
     RoleChoice("HelperAdmin", "Aide au développement du bot et à la gestion des serveurs"),
 ]
 
