@@ -78,6 +78,10 @@ class ServerLinks:
         entry = self._data.get(identifier)
         return list(entry["channels"]) if entry else []
 
+    def all_links(self) -> list[tuple[str, list[int]]]:
+        """[(nom du serveur, [ids des salons])], trié par nom."""
+        return sorted((e["name"], list(e["channels"])) for e in self._data.values())
+
     def names_for_channel(self, channel_id: int) -> list[str]:
         return sorted(e["name"] for e in self._data.values() if channel_id in e["channels"])
 

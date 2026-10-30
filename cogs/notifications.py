@@ -125,6 +125,22 @@ class Notifications(commands.Cog):
             await self._drop_watcher(identifier)  # plus aucun salon : on arrête d'écouter ce serveur
         await ctx.send(f"✅ Les notifications du serveur **{real_name}** ne seront plus envoyées dans ce salon.")
 
+    @commands.command(name="listServers")
+    @commands.has_permissions(administrator=True)
+    async def list_servers(self, ctx: commands.Context):
+        """!listServers — (Admin) Liste les serveurs associés à des salons de ce Discord."""
+        await safe_delete(ctx)
+        embed = discord.Embed(title="Notifications de serveurs", color=0x5865F2)
+        for name, channel_ids in self.links.all_links():
+            # Seuls les salons de CE Discord sont affichés (le bot peut être présent sur plusieurs)
+            mentions = [ch.mention for cid in channel_ids if (ch := ctx.guild.get_channel(cid))] if ctx.guild else []
+            if mentions:
+                embed.add_field(name=name, value=" ".join(mentions), inline=False)
+        if not embed.fields:
+            await ctx.send("ℹ️ Aucun serveur n'est associé à un salon. Utilise `!setServer \"NomDuServeur\"`.")
+            return
+        await ctx.send(embed=embed)
+
     # ─── Évènements ──────────────────────────────────────────────────────────
     @commands.Cog.listener()
     async def on_server_power(self, identifier: str, action: str, user: discord.abc.User):

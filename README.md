@@ -33,6 +33,7 @@ ui/                Vues et boutons Discord réutilisables
 |---|---|
 | `!setServer "NomDuServeur"` | Associe **ce salon** au serveur (un serveur peut avoir plusieurs salons, un salon plusieurs serveurs) |
 | `!removeServer "NomDuServeur"` | Retire l'association pour ce salon (alias : `!unsetServer`) |
+| `!listServers` | Liste les serveurs associés et leurs salons (ce Discord uniquement) |
 
 Une fois associé, le salon reçoit : ouverture (avec la mention de la personne qui a cliqué sur ▶️ Démarrer),
 fermeture, et connexion d'un joueur. Le bot écoute le websocket de Pterodactyl (temps réel, pas de polling).
