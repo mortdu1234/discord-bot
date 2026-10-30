@@ -1,103 +1,42 @@
-# 🤖 Bot Discord — Minecraft Pterodactyl
+# Bot Discord – Gestion de serveurs Minecraft (Pterodactyl)
 
-Bot Discord pour monitorer et contrôler tes serveurs Minecraft hébergés sur Pterodactyl.
-
----
-
-## 📦 Installation
-
+## Installation
 ```bash
-# 1. Cloner / copier les fichiers dans un dossier
-cd /opt/minecraft-bot
-
-# 2. Créer un environnement virtuel Python
-python3 -m venv venv
-source venv/bin/activate
-
-# 3. Installer les dépendances
+python -m venv .venv && source .venv/bin/activate   # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
-
-# 4. Configurer le .env
-cp .env.example .env
-nano .env
+cp .env.example .env     # puis remplis les valeurs
+python main.py
 ```
 
----
-
-## ⚙️ Configuration du `.env`
-
-| Variable              | Description                                                  |
-|-----------------------|--------------------------------------------------------------|
-| `DISCORD_TOKEN`       | Token de ton bot Discord (portail developer Discord)         |
-| `PTERODACTYL_URL`     | URL de ton panel Pterodactyl (ex: `https://panel.exemple.com`) |
-| `PTERODACTYL_API_KEY` | **Client** API Key (dans Account > API Credentials)          |
-
-> ⚠️ Utilise bien une **Client API Key** (`ptlc_...`), pas une Application Key.
-
----
-
-## 🚀 Lancement
-
+## Docker
 ```bash
-# Manuel
-source venv/bin/activate
-python bot.py
+cp .env.example .env     # puis remplis les valeurs
+docker compose up -d --build
+docker compose logs -f   # voir les logs
+docker compose down      # arrêter
+```
+Le `.env` n'est jamais copié dans l'image : il est injecté au lancement du conteneur.
+Après avoir modifié le code ou ajouté un cog, relance avec `docker compose up -d --build`.
 
-# Ou avec systemd (recommandé sur Proxmox/VM)
+## Structure
+```
+main.py            Point d'entrée
+config.py          Variables .env + constantes (rôles proposés, etc.)
+core/              Le bot (chargement auto des cogs) + utilitaires
+services/          Accès aux API externes (Pterodactyl, ping Minecraft) – sans code Discord
+cogs/              UNE FONCTIONNALITÉ = UN FICHIER (commandes Discord)
+ui/                Vues et boutons Discord réutilisables
 ```
 
-### Service systemd (optionnel)
+## Ajouter une fonctionnalité
+1. `cp cogs/_template.py cogs/ma_fonction.py`
+2. Modifie la classe et ajoute tes commandes
+3. Relance le bot : le fichier est détecté et chargé tout seul.
 
-Crée `/etc/systemd/system/minecraft-bot.service` :
+Pour désactiver une fonctionnalité sans la supprimer : renomme son fichier avec un `_` devant
+(`cogs/roles.py` → `cogs/_roles.py`).
 
-```ini
-[Unit]
-Description=Discord Minecraft Bot
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/minecraft-bot
-ExecStart=/opt/minecraft-bot/venv/bin/python bot.py
-Restart=always
-RestartSec=5
-User=www-data
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-systemctl daemon-reload
-systemctl enable --now minecraft-bot
-systemctl status minecraft-bot
-```
-
----
-
-## 🎮 Commandes
-
-| Commande                       | Description                                      |
-|--------------------------------|--------------------------------------------------|
-| `!status [NomDuServeur]`       | Affiche l'état + ressources du serveur           |
-| `!servers`                     | Liste tous les serveurs disponibles              |
-
-### Exemple
-
-```
-!status Survival
-!status Creative_2
-```
-
-Le bot affichera un embed avec :
-- 🟢 État (En ligne / Hors ligne / Démarrage…)
-- RAM, CPU, Disque utilisés
-- Uptime
-- Boutons **Démarrer / Arrêter / Redémarrer** selon l'état actuel
-
----
-
-## 🔒 Sécurité
-
-- Restreins les commandes à un canal spécifique si besoin en ajoutant une vérification `ctx.channel.id`.
-- Ne partage jamais ton `.env`.
+## Règle d'or
+- `services/` : parle aux API, ne connaît pas Discord.
+- `cogs/` : reçoit les commandes, appelle les services, construit les messages.
+- `ui/` : boutons / menus partagés entre plusieurs cogs.

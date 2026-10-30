@@ -1,0 +1,6 @@
+services:
+  bot:
+    build: .
+    container_name: discord-bot
+    restart: unless-stopped
+    env_file: .env        # les secrets restent hors de l'image
