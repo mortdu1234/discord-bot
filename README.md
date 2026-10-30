@@ -28,6 +28,16 @@ cogs/              UNE FONCTIONNALITÉ = UN FICHIER (commandes Discord)
 ui/                Vues et boutons Discord réutilisables
 ```
 
+## Notifications de serveurs (admin)
+| Commande | Effet |
+|---|---|
+| `!setServer "NomDuServeur"` | Associe **ce salon** au serveur (un serveur peut avoir plusieurs salons, un salon plusieurs serveurs) |
+| `!removeServer "NomDuServeur"` | Retire l'association pour ce salon (alias : `!unsetServer`) |
+
+Une fois associé, le salon reçoit : ouverture (avec la mention de la personne qui a cliqué sur ▶️ Démarrer),
+fermeture, et connexion d'un joueur. Le bot écoute le websocket de Pterodactyl (temps réel, pas de polling).
+Les associations sont sauvegardées dans `data/server_links.json` (volume Docker `bot-data`).
+
 ## Ajouter une fonctionnalité
 1. `cp cogs/_template.py cogs/ma_fonction.py`
 2. Modifie la classe et ajoute tes commandes

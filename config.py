@@ -1,5 +1,6 @@
 """Configuration centrale : variables d'environnement et constantes du bot."""
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -25,6 +26,9 @@ def _parse_server_ips(raw: str) -> dict[str, str]:
 
 
 SERVER_IPS = _parse_server_ips(os.getenv("SERVER_IPS", ""))
+
+# Dossier où le bot garde ses fichiers de données (associations salon ↔ serveur, etc.)
+DATA_DIR = Path(os.getenv("DATA_DIR") or Path(__file__).resolve().parent / "data")
 
 # ─── Constantes du bot ───────────────────────────────────────────────────────
 # Rôles proposés dans le menu de sélection (commande ServerRoleSelection)

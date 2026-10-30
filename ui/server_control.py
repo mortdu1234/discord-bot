@@ -18,6 +18,9 @@ class PowerButton(discord.ui.Button):
         await interaction.response.defer(thinking=True)
         success = await self.ptero.send_power_action(self.identifier, self.action)
         if success:
+            if self.action in ("start", "restart"):
+                # Les cogs intéressés (ex. notifications) écoutent `on_server_power`
+                interaction.client.dispatch("server_power", self.identifier, self.action, interaction.user)
             await interaction.followup.send(
                 f"✅ Commande de **{ACTION_LABELS.get(self.action, self.action)}** envoyée avec succès !"
             )

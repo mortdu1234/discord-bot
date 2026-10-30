@@ -108,6 +108,13 @@ class PterodactylClient:
         """Envoie une commande dans la console du serveur."""
         return await self._post_ok(f"/servers/{identifier}/command", {"command": command})
 
+    async def get_websocket_credentials(self, identifier: str) -> dict:
+        """{'token': ..., 'socket': 'wss://...'} pour écouter la console/les états en direct."""
+        data = (await self._get_json(f"/servers/{identifier}/websocket")).get("data")
+        if not data or "token" not in data or "socket" not in data:
+            raise PterodactylError("Réponse websocket invalide du panel.")
+        return data
+
     # ─── Fichiers ────────────────────────────────────────────────────────────
     async def read_file(self, identifier: str, path: str) -> str | None:
         try:

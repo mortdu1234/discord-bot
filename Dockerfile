@@ -13,7 +13,7 @@ RUN pip install -r requirements.txt
 COPY . .
 
 # Exécution sans les droits root
-RUN useradd --create-home --uid 1000 bot && chown -R bot:bot /app
+RUN mkdir -p /app/data && useradd --create-home --uid 1000 bot && chown -R bot:bot /app
 USER bot
 
 CMD ["python", "main.py"]
